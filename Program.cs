@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Win32;
 
-namespace ChangeMonitorMode;
+namespace JetKvmMonitorSwitcher;
 
 record MonitorItem(string Key, string Name) { public override string ToString() => Name; }
 class MonitorIdentityException : Exception
@@ -28,7 +28,7 @@ class Settings
     {
         Home = null; Monitor = null; MirrorMonitor = null; Outside = false;
     }
-    public static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ChangeMonitorMode", "settings.json");
+    public static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "jetkvm-monitor-switcher", "settings.json");
     public void Save()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
@@ -129,12 +129,12 @@ static class Displays
 static class Startup
 {
     const string Key = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    public static bool Enabled { get { using var key = Registry.CurrentUser.OpenSubKey(Key); return key?.GetValue("ChangeMonitorMode") != null; } }
+    public static bool Enabled { get { using var key = Registry.CurrentUser.OpenSubKey(Key); return key?.GetValue("jetkvm-monitor-switcher") != null; } }
     public static void Set(bool enabled)
     {
         using var key = Registry.CurrentUser.CreateSubKey(Key);
-        if (enabled) key.SetValue("ChangeMonitorMode", $"\"{Environment.ProcessPath}\" --startup");
-        else key.DeleteValue("ChangeMonitorMode", false);
+        if (enabled) key.SetValue("jetkvm-monitor-switcher", $"\"{Environment.ProcessPath}\" --startup");
+        else key.DeleteValue("jetkvm-monitor-switcher", false);
     }
 }
 class TrayApp : ApplicationContext
@@ -302,7 +302,7 @@ class TrayApp : ApplicationContext
             catch (ObjectDisposedException) { break; }
         }
     }
-    void Update() { tray.Icon = settings.Outside ? outsideIcon : homeIcon; tray.Text = "ChangeMonitorMode · " + (settings.Outside ? "외부 모드" : "집 모드") + (settings.JetAuto ? (sessionPolicy.Count.HasValue ? " · 자동 감지" : " · 감지 대기") : ""); }
+    void Update() { tray.Icon = settings.Outside ? outsideIcon : homeIcon; tray.Text = "jetkvm-monitor-switcher · " + (settings.Outside ? "외부 모드" : "집 모드") + (settings.JetAuto ? (sessionPolicy.Count.HasValue ? " · 자동 감지" : " · 감지 대기") : ""); }
     void Error(Exception ex) { lastError = ex.Message; WriteJetStatus(); tray.ShowBalloonTip(8000, "화면 구성 적용 실패", ex.Message, ToolTipIcon.Error); }
     void ResetMonitorConfiguration(Exception reason)
     {
@@ -353,7 +353,7 @@ class TrayApp : ApplicationContext
         {
             Layout layout = settings.Home ?? Displays.Capture();
             var items = Displays.List(layout);
-            using var form = new Form { Text = "ChangeMonitorMode 설정", ClientSize = new Size(470, 345), StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false };
+            using var form = new Form { Text = "jetkvm-monitor-switcher 설정", ClientSize = new Size(470, 345), StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false };
             var label = new Label { Text = "외부 모드에서 사용할 Jet KVM 연결 모니터", Left = 20, Top = 20, AutoSize = true };
             var combo = new ComboBox { Left = 20, Top = 48, Width = 425, DropDownStyle = ComboBoxStyle.DropDownList };
             combo.Items.AddRange(items.Cast<object>().ToArray());
@@ -470,7 +470,7 @@ static class Shortcuts
 }
 static class Program
 {
-    internal static string PipeName => "ChangeMonitorMode-" + WindowsIdentity.GetCurrent().User!.Value + "-" + System.Diagnostics.Process.GetCurrentProcess().SessionId;
+    internal static string PipeName => "jetkvm-monitor-switcher-" + WindowsIdentity.GetCurrent().User!.Value + "-" + System.Diagnostics.Process.GetCurrentProcess().SessionId;
     static void Send(string command)
     {
         using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut);
@@ -570,7 +570,7 @@ static class Program
             File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "diagnostics.json"), JsonSerializer.Serialize(new { Validation = "Home and each single-monitor layout passed SDC_VALIDATE", PathCount = layout.Paths.Length / 72, ModeCount = layout.Modes.Length / 64, Monitors = Displays.List(layout).Select(x => x.Name) }));
             return;
         }
-        using var mutex = new Mutex(true, @"Local\ChangeMonitorMode", out bool first);
+        using var mutex = new Mutex(true, @"Local\jetkvm-monitor-switcher", out bool first);
         bool? requestedMode = args.Contains("--outside") ? true : args.Contains("--home") ? false : null;
         if (!first)
         {

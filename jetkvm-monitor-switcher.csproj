@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <AssemblyName>jetkvm-monitor-switcher</AssemblyName>
-    <RootNamespace>ChangeMonitorMode</RootNamespace>
+    <RootNamespace>JetKvmMonitorSwitcher</RootNamespace>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>

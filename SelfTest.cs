@@ -2,7 +2,7 @@ using MQTTnet;
 using MQTTnet.Client;
 using MQTTnet.Protocol;
 
-namespace ChangeMonitorMode;
+namespace JetKvmMonitorSwitcher;
 
 static class SelfTest
 {

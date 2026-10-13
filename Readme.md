@@ -60,10 +60,12 @@ dotnet publish -c Release -r win-x64 --self-contained true -o publish
 빌드 산출물 이름은 `jetkvm-monitor-switcher.exe`, `jetkvm-monitor-switcher.dll`,
 `jetkvm-monitor-switcher.deps.json`, `jetkvm-monitor-switcher.runtimeconfig.json`입니다.
 배포 ZIP 이름은 `jetkvm-monitor-switcher-win-x64.zip`을 사용합니다.
-기존 `ChangeMonitorMode.exe`에서 교체할 때는 트레이 메뉴에서 종료한 뒤 새 실행
-파일을 실행하고, 로그인 자동 실행 설정과 바탕화면 바로가기를 다시 저장하세요.
+이전 버전에서 교체할 때는 트레이 메뉴에서 종료한 뒤 새 실행 파일을 실행하고,
+로그인 자동 실행 설정과 바탕화면 바로가기를 다시 저장하세요.
 방화벽 규칙도 새 실행 파일 경로로 다시 설정해야 합니다.
-기존 설정 폴더와 내부 통신 식별자는 유지하므로 저장한 모니터 구성을 이어서 사용합니다.
+설정 폴더와 내부 통신 식별자는 `jetkvm-monitor-switcher`를 사용합니다.
+이전 이름의 설정 폴더는 자동으로 읽지 않으므로 새 버전에서 모니터와 MQTT 설정을
+다시 저장하세요. 이전 버전의 로그인 자동 실행 항목도 해제한 뒤 교체하세요.
 
 프로젝트의 `bin` 실행 파일은 배포본이 있으면 `publish/jetkvm-monitor-switcher.exe`에
 실행을 전달합니다. 개발본을 직접 실행할 때는 `--dev`를 사용하세요.
@@ -114,7 +116,7 @@ dotnet publish -c Release -r win-x64 --self-contained true -o publish
 초기 상태에서는 자동 감지가 꺼져 있으며 네트워크 주소는 지정되어 있지 않습니다.
 
 1. 앱을 한 번 실행하여 모니터 설정을 저장한 뒤 트레이 메뉴에서 **종료**합니다.
-2. `%LOCALAPPDATA%\ChangeMonitorMode\settings.json`의 아래 필드를 수정합니다.
+2. `%LOCALAPPDATA%\jetkvm-monitor-switcher\settings.json`의 아래 필드를 수정합니다.
    기존 모니터 설정과 다른 필드는 그대로 유지하세요.
 3. JetKVM의 MQTT 설정에서 Broker Address를 PC 주소로, Port를 같은 포트로
    지정합니다. Remote Control은 끄고 저장·재연결합니다.
@@ -200,11 +202,13 @@ dotnet publish -c Release -r win-x64 --self-contained true -o publish
 
 ## 설정과 문제 해결
 
-- 설정: `%LOCALAPPDATA%\ChangeMonitorMode\settings.json`
+- 설정: `%LOCALAPPDATA%\jetkvm-monitor-switcher\settings.json`
 - 접속 상태·실행 경로·마지막 전환 오류: 같은 폴더의 `jet-status.json`
 - 로그인 자동 실행: 현재 사용자 레지스트리
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
 - 진단·자체 검증·바로가기 배치 결과: 실행 파일 옆 JSON 파일
+
+로그인 자동 실행 항목 이름도 `jetkvm-monitor-switcher`입니다.
 
 저장된 화면 구성을 적용할 수 없으면 설정 파일을 `.backup-날짜-시간`으로 백업하고
 모니터 설정을 초기화합니다. 전체 화면을 확장 모드로 활성화한 뒤 설정 창을 열며,

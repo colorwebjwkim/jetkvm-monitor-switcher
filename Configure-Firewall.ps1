@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Allows JetKVM MQTT status traffic to ChangeMonitorMode.
+Allows JetKVM MQTT status traffic to jetkvm-monitor-switcher.
 .DESCRIPTION
 Run in elevated PowerShell. IP addresses must match settings.json.
 Use -WhatIf to preview. Block rules are changed only with -DisableConflictingBlocks.
@@ -27,12 +27,12 @@ if ($JetIp.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork -o
     throw 'Use IPv4 addresses for JetIp and ReceiverIp.'
 }
 
-$ruleName = 'ChangeMonitorMode-JetKVM-State'
+$ruleName = 'jetkvm-monitor-switcher-JetKVM-State'
 if ($PSCmdlet.ShouldProcess($resolvedExecutable, "Allow TCP port $Port from $JetIp to $ReceiverIp")) {
     $existingRule = Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue
     if ($existingRule) { $existingRule | Remove-NetFirewallRule }
     New-NetFirewallRule -Name $ruleName `
-        -DisplayName 'ChangeMonitorMode: JetKVM session status only' `
+        -DisplayName 'jetkvm-monitor-switcher: JetKVM session status only' `
         -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port `
         -LocalAddress $ReceiverIp.ToString() -RemoteAddress $JetIp.ToString() `
         -Program $resolvedExecutable -Profile Any | Out-Null

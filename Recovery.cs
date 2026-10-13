@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace ChangeMonitorMode;
+namespace JetKvmMonitorSwitcher;
 
 // A separate process survives a crash or a forced termination of the tray app.
 static class Recovery
@@ -10,7 +10,7 @@ static class Recovery
 
     public static void Start(bool development)
     {
-        string token = @"Local\ChangeMonitorMode-Recovery-" + Guid.NewGuid().ToString("N");
+        string token = @"Local\jetkvm-monitor-switcher-Recovery-" + Guid.NewGuid().ToString("N");
         stop = new EventWaitHandle(false, EventResetMode.ManualReset, token);
         using var ready = new EventWaitHandle(false, EventResetMode.ManualReset, token + "-ready");
         var launch = Launch();

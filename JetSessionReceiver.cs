@@ -4,7 +4,7 @@ using MQTTnet;
 using MQTTnet.Protocol;
 using MQTTnet.Server;
 
-namespace ChangeMonitorMode;
+namespace JetKvmMonitorSwitcher;
 
 // All policy calls run on the UI thread. Unknown/offline data never means zero sessions.
 sealed class SessionPolicy
