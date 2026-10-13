@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>jetkvm-monitor-switcher</AssemblyName>
+    <RootNamespace>ChangeMonitorMode</RootNamespace>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
+    <Compile Remove="publish/**;verify/**;verification/**;artifacts/**;.local/**" />
+    <None Remove="publish/**;verify/**;verification/**;artifacts/**;.local/**" />
+    <Content Remove="publish/**;verify/**;verification/**;artifacts/**;.local/**" />
+  </ItemGroup>
+</Project>

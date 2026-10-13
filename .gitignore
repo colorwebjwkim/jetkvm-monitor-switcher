@@ -1,0 +1,42 @@
+# .NET build and publish output
+**/bin/
+**/obj/
+/publish/
+/verify/
+/verification/
+/artifacts/
+
+# Local notes, downloaded references and machine-specific data
+/.local/
+*.zip
+*.log
+*.tmp
+*.backup-*
+settings.json
+jet-status.json
+diagnostics.json
+self-test.json
+clone-validation.json
+clone-live-test.json
+desktop-shortcuts.json
+shortcut-install-error.txt
+firewall-result.txt
+home.ico
+outside.ico
+
+# IDE and operating system files
+.vs/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
