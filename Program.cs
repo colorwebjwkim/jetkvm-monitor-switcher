@@ -13,7 +13,7 @@ class MonitorIdentityException : Exception
 {
     public MonitorIdentityException() : base("저장된 모니터의 식별 정보를 읽을 수 없습니다. 그래픽 어댑터 또는 연결 구성이 변경되었을 수 있습니다.") { }
 }
-class Layout { public byte[] Paths { get; set; } = []; public byte[] Modes { get; set; } = []; }
+class Layout { public byte[] Paths { get; set; } = []; public byte[] Modes { get; set; } = []; public string[]? MonitorKeys { get; set; } }
 class Settings
 {
     public string? Monitor { get; set; }
@@ -45,16 +45,20 @@ static class Displays
     [DllImport("user32.dll")] static extern int DisplayConfigGetDeviceInfo([In, Out] byte[] request);
     static void Check(int result) { if (result != 0) throw new Win32Exception(result); }
     public static void ExtendAll() => Check(SetDisplayConfig(0, null, 0, null, 0x4 | 0x80));
-    public static Layout Capture()
+    public static Layout Capture(uint flags = 2)
     {
         for (int attempt = 0; attempt < 5; attempt++)
         {
-            Check(GetDisplayConfigBufferSizes(2, out uint p, out uint m));
+            Check(GetDisplayConfigBufferSizes(flags, out uint p, out uint m));
             byte[] paths = new byte[p * PathSize], modes = new byte[m * ModeSize];
-            int result = QueryDisplayConfig(2, ref p, paths, ref m, modes, IntPtr.Zero);
+            int result = QueryDisplayConfig(flags, ref p, paths, ref m, modes, IntPtr.Zero);
             if (result == 122) continue;
             Check(result);
-            return new Layout { Paths = paths[..((int)p * PathSize)], Modes = modes[..((int)m * ModeSize)] };
+            var layout = new Layout { Paths = paths[..((int)p * PathSize)], Modes = modes[..((int)m * ModeSize)] };
+            if (flags == 1)
+                layout.Paths = Enumerable.Range(0, (int)p).Where(i => BitConverter.ToInt32(layout.Paths, i * PathSize + 60) != 0).SelectMany(i => layout.Paths.Skip(i * PathSize).Take(PathSize)).ToArray();
+            layout.MonitorKeys = List(layout).Select(x => x.Key).ToArray();
+            return layout;
         }
         throw new Exception("모니터 구성이 변경 중입니다. 잠시 후 다시 시도하세요.");
     }
@@ -103,6 +107,7 @@ static class Displays
     public static void Apply(Layout layout, string? only = null, bool validateOnly = false, string? mirror = null)
     {
         if (layout.Paths.Length == 0 || layout.Paths.Length % PathSize != 0 || layout.Modes.Length % ModeSize != 0) throw new Exception("저장된 화면 구성이 올바르지 않습니다.");
+        layout = Rebind(layout);
         byte[] paths = layout.Paths;
         byte[] modes = (byte[])layout.Modes.Clone();
         if (only != null)
@@ -114,15 +119,73 @@ static class Displays
             {
                 if (!monitors[index].Name.Contains("JetKVM", StringComparison.OrdinalIgnoreCase)) throw new Exception("화면 복제 시 주 모니터는 JetKVM을 선택하세요.");
                 var clone = BuildClone(layout, index, monitors.FindIndex(x => x.Key == mirror));
-                Apply(clone, validateOnly: validateOnly); return;
+                ApplyRaw(clone, validateOnly); return;
             }
             paths = layout.Paths[(index * PathSize)..((index + 1) * PathSize)];
             int sourceMode = (int)BitConverter.ToUInt32(paths, 12);
             if (sourceMode >= 0 && sourceMode < modes.Length / ModeSize) Array.Clear(modes, sourceMode * ModeSize + 28, 8);
         }
+        ApplyRaw(new Layout { Paths = paths, Modes = modes }, validateOnly);
+    }
+    static void ApplyRaw(Layout layout, bool validateOnly)
+    {
+        var paths = layout.Paths; var modes = layout.Modes;
         Check(SetDisplayConfig((uint)(paths.Length / PathSize), paths, (uint)(modes.Length / ModeSize), modes, 0x40 | 0x20 | 0x400));
         if (validateOnly) return;
         Check(SetDisplayConfig((uint)(paths.Length / PathSize), paths, (uint)(modes.Length / ModeSize), modes, 0x20 | 0x80 | 0x400 | 0x200));
+    }
+
+    public static Layout Rebind(Layout saved)
+    {
+        // Adapter LUIDs are local to a boot. Persist physical device paths and
+        // resolve them against all current paths, including inactive outputs.
+        var current = Capture(1);
+        var keys = saved.MonitorKeys;
+        if (keys == null)
+        {
+            // Legacy snapshots contain no physical keys. Only migrate when
+            // the adapter is unambiguous and every original output still exists.
+            var oldAdapters = Enumerable.Range(0, saved.Paths.Length / PathSize).Select(i => BitConverter.ToInt64(saved.Paths, i * PathSize + 20)).Distinct().ToArray();
+            var adapters = Enumerable.Range(0, current.Paths.Length / PathSize).Select(i => BitConverter.ToInt64(current.Paths, i * PathSize + 20)).Distinct().ToArray();
+            if (oldAdapters.Length != 1 || adapters.Length != 1) throw new MonitorIdentityException();
+            keys = Enumerable.Range(0, saved.Paths.Length / PathSize).Select(i =>
+            {
+                var matches = Enumerable.Range(0, current.Paths.Length / PathSize)
+                    .Where(j => BitConverter.ToUInt32(saved.Paths, i * PathSize + 28) == BitConverter.ToUInt32(current.Paths, j * PathSize + 28))
+                    .Select(j => current.MonitorKeys![j]).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                if (matches.Length != 1) throw new MonitorIdentityException();
+                return matches[0];
+            }).ToArray();
+        }
+        return Rebind(saved, current, keys);
+    }
+    internal static Layout Rebind(Layout saved, Layout current, string[] keys)
+    {
+        if (keys.Length != saved.Paths.Length / PathSize || current.MonitorKeys == null) throw new MonitorIdentityException();
+        var paths = (byte[])saved.Paths.Clone(); var modes = (byte[])saved.Modes.Clone();
+        for (int i = 0; i < keys.Length; i++)
+        {
+            int offset = i * PathSize;
+            var matches = Enumerable.Range(0, current.MonitorKeys.Length).Where(j => string.Equals(keys[i], current.MonitorKeys[j], StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (matches.Length == 0) throw new MonitorIdentityException();
+            // Prefer the original source routing; never guess a new source ID.
+            int match = Array.FindIndex(matches, j => BitConverter.ToUInt32(current.Paths, j * PathSize + 8) == BitConverter.ToUInt32(saved.Paths, offset + 8));
+            if (match < 0) throw new MonitorIdentityException();
+            int live = matches[match] * PathSize;
+            Array.Copy(current.Paths, live, paths, offset, 12);
+            Array.Copy(current.Paths, live + 20, paths, offset + 20, 12);
+            foreach (int indexOffset in new[] { 12, 32 })
+            {
+                uint index = BitConverter.ToUInt32(paths, offset + indexOffset);
+                if (index == uint.MaxValue) continue;
+                if (index >= modes.Length / ModeSize) throw new MonitorIdentityException();
+                int mode = (int)index * ModeSize;
+                int identity = indexOffset == 12 ? offset : offset + 20;
+                Array.Copy(paths, identity + 8, modes, mode + 4, 4);
+                Array.Copy(paths, identity, modes, mode + 8, 8);
+            }
+        }
+        return new Layout { Paths = paths, Modes = modes, MonitorKeys = keys.ToArray() };
     }
 
 }
@@ -206,6 +269,8 @@ class TrayApp : ApplicationContext
             try
             {
                 bool outside = requestedMode ?? false;
+                settings.Home = Displays.Rebind(settings.Home);
+                if (settings.Monitor != null && !settings.Home.MonitorKeys!.Contains(settings.Monitor, StringComparer.OrdinalIgnoreCase)) throw new MonitorIdentityException();
                 Displays.Apply(settings.Home, outside ? settings.Monitor ?? throw new Exception("외부 모니터를 선택하세요.") : null, mirror: outside ? settings.MirrorMonitor : null);
                 settings.Outside = outside; settings.Save(); Update();
                 timer.Stop(); timer.Dispose();
@@ -214,11 +279,12 @@ class TrayApp : ApplicationContext
             }
             catch (Exception ex)
             {
-                if (ex is Win32Exception { NativeErrorCode: 87 or 1168 } || ++attempts >= 5)
+                if (++attempts >= 30)
                 {
                     timer.Stop(); timer.Dispose(); startupPending = false;
-                    ResetMonitorConfiguration(ex);
-                    if (settings.Home != null) Change(requestedMode ?? false);
+                    Error(ex);
+                    // Keep automation suspended until an explicit user action.
+                    startupPending = true;
                 }
             }
         };
@@ -317,9 +383,7 @@ class TrayApp : ApplicationContext
             lastError = "모니터 설정을 초기화했습니다: " + reason.Message;
             Update(); WriteJetStatus();
             tray.ShowBalloonTip(8000, "모니터 설정 다시 저장", "포트 또는 모니터 구성이 변경되어 설정을 초기화했습니다. 전체 모니터를 켠 뒤 설정을 저장하세요.", ToolTipIcon.Warning);
-            // Ask Windows for the available extended topology before capturing
-            // the replacement home layout, rather than saving an outside clone.
-            try { Displays.ExtendAll(); } catch (Exception ex) { Error(ex); }
+            // Never change the desktop as a side effect of recovering a file.
             Configure();
         }
         catch (Exception ex) { Error(ex); }
@@ -341,7 +405,7 @@ class TrayApp : ApplicationContext
         try { Displays.Apply(settings.Home, outside ? settings.Monitor : null, mirror: outside ? settings.MirrorMonitor : null); displayApplied = true; settings.Outside = outside; lastError = null; Update(); settings.Save(); WriteJetStatus(); }
         catch (Exception ex) { if (!displayApplied) displayError = ex; else Error(ex); }
         finally { busy = false; }
-        if (displayError != null) ResetMonitorConfiguration(displayError);
+        if (displayError != null) { startupPending = true; Error(displayError); }
     }
     void Configure()
     {
@@ -351,7 +415,9 @@ class TrayApp : ApplicationContext
         Exception? invalidConfiguration = null;
         try
         {
-            Layout layout = settings.Home ?? Displays.Capture();
+            Layout layout;
+            try { layout = settings.Home != null ? Displays.Rebind(settings.Home) : Displays.Capture(); }
+            catch (Exception ex) { Error(ex); layout = Displays.Capture(); }
             var items = Displays.List(layout);
             using var form = new Form { Text = "jetkvm-monitor-switcher 설정", ClientSize = new Size(470, 345), StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false };
             var label = new Label { Text = "외부 모드에서 사용할 Jet KVM 연결 모니터", Left = 20, Top = 20, AutoSize = true };
@@ -402,7 +468,7 @@ class TrayApp : ApplicationContext
             else Error(ex);
         }
         finally { busy = false; startupPending = false; }
-        if (invalidConfiguration != null) ResetMonitorConfiguration(invalidConfiguration);
+        if (invalidConfiguration != null) { startupPending = true; Error(invalidConfiguration); }
     }
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
     internal static Icon MakeIcon(bool outside)
@@ -567,6 +633,15 @@ static class Program
             var layout = Displays.Capture();
             Displays.Apply(layout, validateOnly: true);
             foreach (var monitor in Displays.List(layout)) Displays.Apply(layout, monitor.Key, validateOnly: true);
+            if (File.Exists(Settings.FilePath))
+            {
+                var saved = JsonSerializer.Deserialize<Settings>(File.ReadAllText(Settings.FilePath));
+                if (saved?.Home != null)
+                {
+                    Displays.Apply(saved.Home, validateOnly: true);
+                    if (saved.Monitor != null) Displays.Apply(saved.Home, saved.Monitor, validateOnly: true, mirror: saved.MirrorMonitor);
+                }
+            }
             File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "diagnostics.json"), JsonSerializer.Serialize(new { Validation = "Home and each single-monitor layout passed SDC_VALIDATE", PathCount = layout.Paths.Length / 72, ModeCount = layout.Modes.Length / 64, Monitors = Displays.List(layout).Select(x => x.Name) }));
             return;
         }

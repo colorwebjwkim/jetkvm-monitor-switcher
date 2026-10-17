@@ -12,6 +12,7 @@ static class Recovery
     {
         string token = @"Local\jetkvm-monitor-switcher-Recovery-" + Guid.NewGuid().ToString("N");
         stop = new EventWaitHandle(false, EventResetMode.ManualReset, token);
+        Microsoft.Win32.SystemEvents.SessionEnding += (_, _) => Stop();
         using var ready = new EventWaitHandle(false, EventResetMode.ManualReset, token + "-ready");
         var launch = Launch();
         launch.ArgumentList.Add("--watchdog");

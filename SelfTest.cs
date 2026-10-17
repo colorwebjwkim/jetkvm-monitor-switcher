@@ -26,6 +26,19 @@ static class SelfTest
             BitConverter.GetBytes(100 + i).CopyTo(originalModes, i * 64 + 28);
         }
         var original = new Layout { Paths = originalPaths, Modes = originalModes };
+        var livePaths = (byte[])originalPaths.Clone();
+        for (int i = 0; i < 3; i++)
+        {
+            BitConverter.GetBytes(99L).CopyTo(livePaths, i * 72);
+            BitConverter.GetBytes(99L).CopyTo(livePaths, i * 72 + 20);
+            BitConverter.GetBytes(uint.MaxValue).CopyTo(originalPaths, i * 72 + 32);
+        }
+        var rebound = Displays.Rebind(original, new Layout { Paths = livePaths, MonitorKeys = ["a", "b", "c"] }, ["a", "b", "c"]);
+        Check(BitConverter.ToInt64(rebound.Paths, 0) == 99 && BitConverter.ToInt64(rebound.Modes, 8) == 99, "Reboot adapter identity not rebound");
+        Check(BitConverter.ToInt64(original.Paths, 0) == 7 && BitConverter.ToInt32(rebound.Modes, 28) == 100, "Rebind changed home layout");
+        bool missingRejected = false;
+        try { Displays.Rebind(original, new Layout { Paths = livePaths, MonitorKeys = ["a", "b", "other"] }, ["a", "b", "c"]); } catch (MonitorIdentityException) { missingRejected = true; }
+        Check(missingRejected, "Missing monitor silently replaced");
         var clone = Displays.BuildClone(original, 2, 0);
         Check(clone.Paths.Length == 144, "Clone enabled unexpected monitors");
         Check(BitConverter.ToUInt32(clone.Paths, 28) == 22 && BitConverter.ToUInt32(clone.Paths, 100) == 20, "JetKVM path lost priority or target identity");
