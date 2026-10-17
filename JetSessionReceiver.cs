@@ -42,7 +42,8 @@ sealed class JetSessionReceiver : IDisposable
     }
     public async Task Start()
     {
-        var options = new MqttServerOptionsBuilder().WithDefaultEndpoint().WithDefaultEndpointBoundIPAddress(IPAddress.Parse(bindIp)).WithDefaultEndpointBoundIPV6Address(IPAddress.IPv6Loopback).WithDefaultEndpointPort(port).Build();
+        var address = ValidateConfiguration(deviceIp, bindIp, port);
+        var options = new MqttServerOptionsBuilder().WithDefaultEndpoint().WithDefaultEndpointBoundIPAddress(address).WithDefaultEndpointBoundIPV6Address(IPAddress.IPv6Loopback).WithDefaultEndpointPort(port).Build();
         server = new MqttFactory().CreateMqttServer(options);
         server.ValidatingConnectionAsync += args =>
         {
@@ -76,6 +77,20 @@ sealed class JetSessionReceiver : IDisposable
         server.ClientDisconnectedAsync += args => { update(null); status("상태 수신 끊김 · 모드 유지"); return Task.CompletedTask; };
         await server.StartAsync();
         status("JetKVM 접속 상태 수신 대기");
+    }
+    internal static IPAddress ValidateConfiguration(string deviceIp, string bindIp, int port)
+    {
+        static IPAddress Parse(string value, string name)
+        {
+            if (!IPAddress.TryParse(value, out var address) || address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
+                address.Equals(IPAddress.Any) || address.Equals(IPAddress.Broadcast))
+                throw new ArgumentException($"{name}에 올바른 IPv4 주소를 입력하세요. settings.json의 JetIp와 ReceiverIp를 확인하세요.");
+            return address;
+        }
+        Parse(deviceIp, "JetKVM IP(JetIp)");
+        var address = Parse(bindIp, "PC 수신 IP(ReceiverIp)");
+        if (port is < 1 or > 65535) throw new ArgumentException("MQTT 수신 포트(ReceiverPort)는 1~65535여야 합니다.");
+        return address;
     }
     public void Dispose() { server?.Dispose(); server = null; }
 }

@@ -11,6 +11,14 @@ static class SelfTest
         var now = DateTimeOffset.UtcNow;
         var p = new SessionPolicy();
         void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+        Check(JetSessionReceiver.ValidateConfiguration("127.0.0.1", "127.0.0.1", 18884).Equals(System.Net.IPAddress.Loopback), "Valid receiver configuration rejected");
+        foreach (var config in new[] { ("", "127.0.0.1", 1883), ("127.0.0.1", "invalid", 1883), ("127.0.0.1", "::1", 1883), ("127.0.0.1", "0.0.0.0", 1883), ("127.0.0.1", "127.0.0.1", 0) })
+        {
+            bool rejected = false;
+            try { JetSessionReceiver.ValidateConfiguration(config.Item1, config.Item2, config.Item3); }
+            catch (ArgumentException ex) { rejected = ex.Message.Contains("IPv4") || ex.Message.Contains("ReceiverPort"); }
+            Check(rejected, "Invalid MQTT configuration accepted or unclear error");
+        }
         var resetSettings = new Settings { Home = new Layout(), Monitor = "old-port", MirrorMonitor = "old-mirror", Outside = true, JetAuto = true, JetIp = "192.0.2.10", ReceiverIp = "192.0.2.11", ReceiverPort = 1885 };
         resetSettings.ClearMonitorConfiguration();
         Check(resetSettings.Home == null && resetSettings.Monitor == null && resetSettings.MirrorMonitor == null && !resetSettings.Outside, "Monitor reset kept stale configuration");

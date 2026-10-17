@@ -346,8 +346,30 @@ class TrayApp : ApplicationContext
                 WriteJetStatus();
             }), status => OnUi(() => { if (receiver == candidate) { jetStatus = status; Update(); WriteJetStatus(); } }));
         receiver = candidate;
-        try { await candidate.Start(); }
-        catch (Exception ex) { if (receiver == candidate) { candidate.Dispose(); receiver = null; jetStatus = "상태 수신 시작 실패: " + ex.Message; WriteJetStatus(); Error(ex); } }
+        for (int attempt = 0; receiver == candidate && !stopping.IsCancellationRequested; attempt++)
+        {
+            try { await candidate.Start(); return; }
+            catch (System.Net.Sockets.SocketException ex) when (ex.SocketErrorCode == System.Net.Sockets.SocketError.AddressNotAvailable && attempt < 30)
+            {
+                candidate.Dispose();
+                jetStatus = "PC 수신 IP 준비 대기 · 자동 전환 대기";
+                Update(); WriteJetStatus();
+                try { await Task.Delay(2000, stopping.Token); }
+                catch (OperationCanceledException) { return; }
+            }
+            catch (Exception ex)
+            {
+                if (receiver != candidate || stopping.IsCancellationRequested) return;
+                candidate.Dispose(); receiver = null;
+                var message = ex is System.Net.Sockets.SocketException socket && socket.SocketErrorCode == System.Net.Sockets.SocketError.AddressNotAvailable
+                    ? "PC에 수신 IP가 할당되지 않았습니다. 네트워크 연결과 settings.json의 ReceiverIp를 확인하세요."
+                    : ex.Message;
+                jetStatus = "상태 수신 시작 실패: " + message;
+                lastError = message; Update(); WriteJetStatus();
+                tray.ShowBalloonTip(8000, "JetKVM 자동 감지 설정 확인", message, ToolTipIcon.Warning);
+                return;
+            }
+        }
     }
     async Task Listen()
     {
